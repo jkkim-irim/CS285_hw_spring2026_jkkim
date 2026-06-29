@@ -47,12 +47,30 @@ class MSEPolicy(BasePolicy):
     ) -> None:
         super().__init__(state_dim, action_dim, chunk_size)
 
+        ### 직접 구현한 부분
+        output_dim = chunk_size * action_dim
+        dims = [state_dim, *hidden_dims, output_dim]
+
+        layers = []
+        for i in range(len(dims) - 1):
+             layers.append(nn.Linear(dims[i], dims[i+1]))
+             if i < len(dims) - 2:
+                layers.append(nn.ReLU())
+        self.net = nn.Sequential(*layers)
+        ### 직접 구현한 부분
+
     def compute_loss(
         self,
         state: torch.Tensor,
         action_chunk: torch.Tensor,
     ) -> torch.Tensor:
-        raise NotImplementedError
+        ### 직접 구현한 부분
+        pred = self.net(state)
+        pred = pred.reshape(-1, self.chunk_size, self.action_dim)
+        return ((pred-action_chunk)**2).mean()
+        ### 직접 구현한 부분
+
+    
 
     def sample_actions(
         self,
@@ -60,7 +78,11 @@ class MSEPolicy(BasePolicy):
         *,
         num_steps: int = 10,
     ) -> torch.Tensor:
-        raise NotImplementedError
+        ### 직접 구현한 부분    
+        pred = self.net(state)
+        pred = pred.reshape(-1, self.chunk_size, self.action_dim)
+        return pred
+        ### 직접 구현한 부분
 
 
 class FlowMatchingPolicy(BasePolicy):

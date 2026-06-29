@@ -12,6 +12,7 @@ import torch
 import tyro
 import wandb
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from hw1_imitation.data import (
     Normalizer,
@@ -20,7 +21,7 @@ from hw1_imitation.data import (
     load_pusht_zarr,
 )
 from hw1_imitation.model import build_policy, PolicyType
-from hw1_imitation.evaluation import Logger
+from hw1_imitation.evaluation import Logger, evaluate_policy
 
 LOGDIR_PREFIX = "exp"
 
@@ -42,7 +43,7 @@ class TrainConfig:
     weight_decay: float = 0.0
     hidden_dims: tuple[int, ...] = (256, 256, 256)
     # The number of epochs to train for.
-    num_epochs: int = 400
+    num_epochs: int = 530
     # How often to run evaluation, measured in training steps.
     eval_interval: int = 10_000
     num_video_episodes: int = 5
@@ -128,6 +129,46 @@ def run_training(config: TrainConfig) -> None:
     logger = Logger(log_dir)
 
     ### TODO: PUT YOUR MAIN TRAINING LOOP HERE ###
+    optimizer = torch.optim.AdamW(model.parameters(),lr=config.lr, weight_decay=config.weight_decay)
+
+    global_step = 0
+    for epoch in range(config.num_epochs):
+        pbar = tqdm(loader, desc=f"Epoch {epoch + 1}/{config.num_epochs}")
+        for state, action_chunk in pbar:
+            state = state.to(device)
+            action_chunk = action_chunk.to(device)
+
+            model.train()
+
+            # 7. loss 계산
+            loss = model.compute_loss(state, action_chunk)
+            
+            # 8. 역전파
+            optimizer.zero_grad()   # gradient 초기화
+            loss.backward()         # gradient 계산
+            optimizer.step()        # 파라미터 업데이트
+
+            global_step += 1
+
+            # 진행 막대 옆에 현재 스텝/loss 실시간 표시 (epoch마다 새 줄에서 0→100%)
+            pbar.set_postfix(step=global_step, loss=f"{loss.item():.4f}")
+
+            if global_step % config.log_interval == 0:
+                logger.log({"train/loss": loss.item()}, step=global_step)
+
+            if global_step % config.eval_interval == 0:
+                evaluate_policy(      
+                    model=model,
+                    normalizer=normalizer,
+                    device=device,
+                    chunk_size=config.chunk_size,
+                    video_size=config.video_size,
+                    num_video_episodes=config.num_video_episodes,
+                    flow_num_steps=config.flow_num_steps,
+                    step=global_step,
+                    logger=logger,
+                )
+
 
     logger.dump_for_grading()
 

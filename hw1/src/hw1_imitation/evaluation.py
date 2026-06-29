@@ -61,8 +61,22 @@ class Logger:
 
     def dump_for_grading(self) -> None:
         wandb_dir = Path(wandb.run.dir).parent
-        wandb.finish()
-        shutil.copytree(wandb_dir, self.path / "wandb")
+        # Capture before finish(): after finish() wandb.run becomes None.
+        synced_to_cloud = wandb.run.settings.mode == "online"
+        wandb.finish()  # blocks until all logged media finishes uploading
+        if synced_to_cloud:
+            # Videos are now uploaded to wandb; drop the redundant local copies
+            # from both the grading bundle and the live run dir to save disk.
+            shutil.copytree(
+                wandb_dir,
+                self.path / "wandb",
+                ignore=shutil.ignore_patterns("*.mp4"),
+            )
+            for video_path in wandb_dir.rglob("*.mp4"):
+                video_path.unlink()
+        else:
+            # Offline/disabled: videos were never uploaded, so keep the only copy.
+            shutil.copytree(wandb_dir, self.path / "wandb")
 
 
 def resize_frame(frame: np.ndarray, size: tuple[int, int]) -> np.ndarray:
